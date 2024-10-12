@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Upload, Star Rating & Comments</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+        }
+
+        h1 {
+            margin-top: 20px;
+        }
+
+        .upload-section {
+            margin: 20px;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            display: inline-block;
+        }
+
+        .upload-section input {
+            margin-right: 10px;
+        }
+
+        #imageGallery {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .image-container {
+            width: 200px;
+            background-color: white;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .image-container img {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+
+        .rating-container {
+            margin: 10px 0;
+        }
+
+        .star {
+            font-size: 24px;
+            cursor: pointer;
+            color: gold;
+        }
+
+        .submit-btn {
+            margin-top: 10px;
+            padding: 5px 10px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        #leaderboard {
+            list-style: none;
+            padding: 0;
+            margin: 20px auto;
+            width: 80%;
+        }
+
+        #leaderboard li {
+            background-color: #fff;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .leaderboard-img {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+    <h1>FaceDash</h1>
+
+    <!-- Upload Section -->
+    <div class="upload-section">
+        <input type="file" id="imageUpload" accept="image/*">
+        <input type="text" id="uploaderName" placeholder="Your Nickname">
+        <input type="text" id="picName" placeholder="Picture Name">
+        <button id="uploadBtn">Upload Image</button>
+    </div>
+
+    <h2>Uploaded Images</h2>
+    <div id="imageGallery"></div>
+
+    <h2>Leaderboard</h2>
+    <ul id="leaderboard"></ul>
+
+    <script type="module">
+        // Firebase Import
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
+        import { getDatabase, ref as dbRef, set, get, child, push, update } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyD7CbIEACQhegopI-wU5lp1hvwEADvuV40",
+            authDomain: "faceslash-dd1d3.firebaseapp.com",
+            projectId: "faceslash-dd1d3",
+            storageBucket: "faceslash-dd1d3.appspot.com",
+            messagingSenderId: "97624155043",
+            appId: "1:97624155043:web:e6e3dddbc52d3dd7bf3016",
+            measurementId: "G-31RGP3EJFH",
+            databaseURL: "https://faceslash-dd1d3-default-rtdb.firebaseio.com"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const storage = getStorage(app);
+        const db = getDatabase(app);
+
+        const imagesData = {};
+
+        // Upload Image Functionality
+        document.getElementById('uploadBtn').addEventListener('click', function () {
+            const file = document.getElementById('imageUpload').files[0];
+            const uploaderName = document.getElementById('uploaderName').value;
+            const picName = document.getElementById('picName').value;
+
+            if (!file || !uploaderName || !picName) {
+                alert("Please provide all the details: file, nickname, and picture name.");
+                return;
+            }
+
+            const storageRef = ref(storage, `images/${file.name}`);
+            uploadBytes(storageRef, file).then(() => {
+                getDownloadURL(storageRef).then(url => {
+                    const imageId = file.name;
+                    imagesData[imageId] = { url, uploaderName, picName, ratings: [], nicknames: [], comments: [] };
+
+                    // Save image data to Realtime Database
+                    set(dbRef(db, 'images/' + imageId), imagesData[imageId])
+                        .then(() => {
+                            displayImage(url, imageId);
+                            alert("Image uploaded successfully!");
+                            document.getElementById('imageUpload').value = "";
+                            document.getElementById('uploaderName').value = "";
+                            document.getElementById('picName').value = "";
+                        });
+                });
+            }).catch(error => {
+                console.error("Error uploading file:", error);
+            });
+        });
+
+        // Display uploaded images with star rating and comment
+        function displayImage(url, imageId) {
+            const imgContainer = document.createElement('div');
+            imgContainer.className = 'image-container';
+
+            const img = document.createElement('img');
+            img.src = url;
+
+            const rateDiv = document.createElement('div');
+            rateDiv.className = 'rating-container';
+
+            const nicknameInput = document.createElement('input');
+            nicknameInput.placeholder = 'Your Nickname';
+
+            const commentInput = document.createElement('input');
+            commentInput.placeholder = 'Add a comment';
+
+            const submitBtn = document.createElement('button');
+            submitBtn.innerHTML = 'Submit Rating';
+            submitBtn.className = 'submit-btn';
+
+            // Star rating system
+            let rating = 0;
+            for (let i = 1; i <= 5; i++) {
+                const star = document.createElement('span');
+                star.className = 'star';
+                star.innerHTML = '☆';
+
+                star.addEventListener('click', function () {
+                    rating = i;
+                    [...rateDiv.getElementsByClassName('star')].forEach((s, idx) => {
+                        s.innerHTML = idx < i ? '★' : '☆';
+                    });
+                });
+
+                rateDiv.appendChild(star);
+            }
+
+            // Submit rating, comment, and nickname
+            submitBtn.addEventListener('click', function () {
+                const nickname = nicknameInput.value;
+                const comment = commentInput.value;
+
+                if (!nickname || rating === 0) {
+                    alert("Please enter a nickname and select a rating.");
+                    return;
+                }
+
+                imagesData[imageId].nicknames.push(nickname);
+                imagesData[imageId].ratings.push(rating);
+                imagesData[imageId].comments.push(comment);
+
+                // Update Realtime Database
+                update(dbRef(db, 'images/' + imageId), imagesData[imageId]).then(() => {
+                    updateLeaderboard();
+                });
+            });
+
+            imgContainer.appendChild(img);
+            imgContainer.appendChild(nicknameInput);
+            imgContainer.appendChild(commentInput);
+            imgContainer.appendChild(rateDiv);
+            imgContainer.appendChild(submitBtn);
+
+            document.getElementById('imageGallery').appendChild(imgContainer);
+        }
+
+        // Update leaderboard based on rating
+        function updateLeaderboard() {
+            const leaderboardList = document.getElementById('leaderboard');
+            leaderboardList.innerHTML = '';  // Clear current leaderboard
+
+            const leaderboard = Object.entries(imagesData)
+                .map(([id, data]) => {
+                    const averageRating = data.ratings.length > 0
+                        ? (data.ratings.reduce((a, b) => a + b, 0) / data.ratings.length).toFixed(2)
+                        : 0;
+                    return { id, url: data.url, averageRating, nicknames: data.nicknames, comments: data.comments };
+                })
+                .sort((a, b) => b.averageRating - a.averageRating);
+
+            leaderboard.forEach((entry, index) => {
+                const listItem = document.createElement('li');
+                listItem.innerHTML = `
+                    <img src="${entry.url}" alt="Image" class="leaderboard-img">
+                    <span>${index + 1}. Rating: ${entry.averageRating} ⭐</span>
+                    <p>Rated by: ${entry.nicknames.join(', ')}</p>
+                    <p>Comments: ${entry.comments.join(', ')}</p>
+                `;
+                leaderboardList.appendChild(listItem);
+            });
+        }
+
+        // Fetch images from Realtime Database and display on page load
+        function fetchImages() {
+            get(child(dbRef(db), 'images')).then(snapshot => {
+                if (snapshot.exists()) {
+                    const images = snapshot.val();
+                    Object.entries(images).forEach(([id, data]) => {
+                        imagesData[id] = data;
+                        displayImage(data.url, id);
+                    });
+                    updateLeaderboard();
+                } else {
+                    console.log("No data available");
+                }
+            }).catch(error => {
+                console.error(error);
+            });
+        }
+
+        // Fetch data on page load
+        fetchImages();
+    </script>
+</body>
+</html>
